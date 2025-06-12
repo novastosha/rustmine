@@ -1,3 +1,5 @@
+pub const PROTOCOL_VERSION: i32 = 770;
+
 pub type Shared<T> = Arc<Mutex<T>>; // Move this elsewhere maybe?
 
 pub mod config;
@@ -5,21 +7,24 @@ pub mod event;
 pub mod packet;
 pub mod player;
 
-use std::{error::Error, sync::Arc};
+use std::sync::Arc;
 use tokio::{net::TcpListener, sync::Mutex, task};
 
-use crate::{config::ServerConfig, event::EventBus, packet::{serverbound::handshake::HandshakePacket, Packet}, player::PlayerConnection};
+use crate::{
+    config::ServerConfig, event::EventBus, packet::serverbound::handshake::HandshakePacket,
+    player::PlayerConnection,
+};
 
 pub struct RustmineServer {
     pub config: ServerConfig,
-    pub event_bus: EventBus,
+    pub event_bus: Arc<EventBus>,
 }
 
 impl RustmineServer {
     pub fn new(config: ServerConfig) -> Shared<RustmineServer> {
         Arc::new(Mutex::new(RustmineServer {
             config,
-            event_bus: EventBus::default(),
+            event_bus: Arc::new(EventBus::default()),
         }))
     }
 
@@ -31,28 +36,33 @@ impl RustmineServer {
         Ok(cloned_event_bus)
     }*/
 
-    pub async fn run(server: Shared<RustmineServer>) -> Result<(), Box<dyn Error>> {
-        let server = server.lock().await;
+    pub async fn run(server: Shared<RustmineServer>) -> Result<(), Box<std::io::Error>> {
+        let server_lock = server.lock().await;
 
         let listener = TcpListener::bind(format!(
             "{}:{}",
-            server.config.bind_address, server.config.port
+            server_lock.config.bind_address, server_lock.config.port
         ))
         .await?;
 
-        println!("Server listening on port: {:?}", server.config.port);
-        drop(server);
+        println!("Server listening on port: {:?}", server_lock.config.port);
 
+        drop(server_lock);
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {
+                    let server = Arc::clone(&server);
+
                     task::spawn(async move {
-                        let connection = Arc::new(Mutex::new(PlayerConnection::new(stream)));
+                        let mut connection = PlayerConnection::new(stream, &server);
+                        let packet = connection.read_packet().await.unwrap();
 
-                        let mut cnx = connection.lock().await;
-                        let handshake = HandshakePacket::read_from(&mut cnx).await.unwrap();
+                        let handshake = packet::downcast_packet::<HandshakePacket>(packet).unwrap();
 
-                        println!("{:?}",handshake.server_address)
+                        println!("New connection accepted from: {}", addr);
+                        connection.handle_handshake(handshake).await.unwrap();
+
+                        ()
                     });
                 }
                 Err(err) => {

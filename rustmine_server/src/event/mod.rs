@@ -4,7 +4,7 @@ use std::{any::{Any, TypeId}, collections::HashMap, pin::Pin, sync::Arc};
 
 use tokio::sync::RwLock;
 
-pub trait Event<R: Clone + Send + Sync + 'static>: Send + Sync + Clone + 'static {}
+pub trait Event<R: Clone + Send + Sync + 'static>: Send + Sync + 'static {}
 
 //
 // One thing to ensure during event thingys, is that the Shared<T> values are not locked prior to the dispatch

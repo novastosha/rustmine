@@ -1,20 +1,21 @@
-use std::io::{Error, ErrorKind, Read, Write};
+use std::{
+    any::Any,
+    io::{Error, ErrorKind, Read, Write},
+    sync::Arc,
+};
 
-use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
+use flate2::{Compression, read::ZlibDecoder, write::ZlibEncoder};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 
-use crate::player::PlayerConnection;
-
-pub mod serverbound;
 pub mod clientbound;
+pub mod serverbound;
 
 pub mod data {
     use std::io::{Error, ErrorKind};
 
-    use serde_json::Value;
     use uuid::Uuid;
 
     pub fn write_varint(buffer: &mut Vec<u8>, mut value: u32) {
@@ -46,9 +47,9 @@ pub mod data {
             return Err(Error::new(ErrorKind::Other, "Not enough bytes"));
         }
 
-        let result = u16::from_be_bytes([buffer[*position], buffer[*position + 1]]);
+            let result = u16::from_be_bytes([buffer[*position], buffer[*position + 1]]);
 
-        *position += 2;
+            *position += 2;
 
         Ok(result)
     }
@@ -96,10 +97,7 @@ pub mod data {
         let length = read_varint(buffer, position)? as usize;
 
         if *position + length > buffer.len() {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "Not enoguh bytes",
-            ))?;
+            return Err(Error::new(ErrorKind::Other, "Not enoguh bytes"))?;
         }
 
         let string_bytes = &buffer[*position..*position + length];
@@ -112,10 +110,7 @@ pub mod data {
 
     pub fn read_uuid(buffer: &[u8], position: &mut usize) -> Result<Uuid, Error> {
         if *position + 16 > buffer.len() {
-            return Err(Error::new(
-                ErrorKind::UnexpectedEof,
-                "Not enough bytes",
-            ));
+            return Err(Error::new(ErrorKind::UnexpectedEof, "Not enough bytes"));
         }
 
         let uuid_bytes: [u8; 16] = buffer[*position..*position + 16].try_into().unwrap();
@@ -127,15 +122,31 @@ pub mod data {
     pub fn write_bool(buffer: &mut Vec<u8>, value: bool) {
         buffer.push(if value { 1 } else { 0 });
     }
-    
+
     pub fn read_bool(buffer: &Vec<u8>, position: &mut usize) -> Result<bool, Error> {
         if *position >= buffer.len() {
             return Err(Error::new(ErrorKind::Other, "Not enough bytes"));
         }
-    
+
         let result = buffer[*position] != 0;
         *position += 1;
-    
+
+        Ok(result)
+    }
+
+    pub fn write_long(buffer: &mut Vec<u8>, payload: u64) {
+        buffer.extend_from_slice(&payload.to_be_bytes());
+    }
+
+    pub(crate) fn read_long(buffer: &[u8], position: &mut usize) -> Result<u64, Error> {
+        if buffer.len() < *position + 8 {
+            return Err(Error::new(ErrorKind::UnexpectedEof, "Not enough bytes"));
+        }
+
+        let slice = &buffer[*position..*position + 8];
+        let result = u64::from_be_bytes(slice.try_into().unwrap());
+
+        *position += 8;
         Ok(result)
     }
 }
@@ -153,7 +164,10 @@ pub async fn read_packet(
     let packet_length = data::read_varint(&mut slice, &mut position)?;
 
     if packet_length == 0 {
-        return Err(Box::new(Error::new(ErrorKind::InvalidData, "Packet length cannot be zero")));
+        return Err(Box::new(Error::new(
+            ErrorKind::InvalidData,
+            "Packet length cannot be zero",
+        )));
     }
 
     let mut buffer = vec![0u8; packet_length as usize];
@@ -193,7 +207,10 @@ pub async fn read_packet(
     Ok((packet_length, packet_id, data))
 }
 
-pub fn read_packet_from_bytes(mut slice: &[u8], compression_threshold: u32) -> Result<RawPacket, Error> {
+pub fn read_packet_from_bytes(
+    mut slice: &[u8],
+    compression_threshold: u32,
+) -> Result<RawPacket, Error> {
     let mut position = 0;
 
     let packet_length = data::read_varint(&mut slice, &mut position)?;
@@ -231,15 +248,15 @@ pub fn read_packet_from_bytes(mut slice: &[u8], compression_threshold: u32) -> R
     Ok((packet_length, packet_id, data))
 }
 
-pub(crate) async fn send_packet<P: Packet>(
-    packet: &P,
+pub(crate) async fn write_packet(
+    packet: &dyn Packet,
     cnx: &mut TcpStream,
     compression_threshold: u32,
 ) -> Result<(), Error> {
     let mut buffer = Vec::new();
 
     // Write packet ID first
-    let packet_id = P::id();
+    let packet_id = packet.packet_id();
     data::write_varint(&mut buffer, packet_id);
 
     // Write packet data
@@ -257,8 +274,6 @@ pub(crate) async fn send_packet<P: Packet>(
         data::write_varint(&mut final_buffer, uncompressed_length);
         final_buffer.extend(buffer);
     } else if uncompressed_length >= compression_threshold {
-
-
         let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&buffer)?;
         let compressed_data = encoder.finish()?;
@@ -271,9 +286,7 @@ pub(crate) async fn send_packet<P: Packet>(
 
         final_buffer.extend(compressed_data);
     } else {
-        
-        let uncompressed_length_with_indicator =
-            uncompressed_length + data::varint_size(0) as u32;
+        let uncompressed_length_with_indicator = uncompressed_length + data::varint_size(0) as u32;
 
         data::write_varint(&mut final_buffer, uncompressed_length_with_indicator);
         data::write_varint(&mut final_buffer, 0);
@@ -287,11 +300,80 @@ pub(crate) async fn send_packet<P: Packet>(
     Ok(())
 }
 
-pub trait Packet {
-    fn id() -> u32 where Self: Sized;
+pub trait Packet: Any + Send + Sync {
+    fn id() -> u32
+    where
+        Self: Sized;
 
-    fn write_to(self: &Self, buffer: &mut Vec<u8>) where Self: Sized;
+    fn packet_id(&self) -> u32; // This is a method to get the packet ID from an instance
+
+    fn write_to(self: &Self, buffer: &mut Vec<u8>);
+
     fn read_from(
-        connection: &mut PlayerConnection,
-    ) -> impl std::future::Future<Output = Result<Box<Self>, Box<dyn std::error::Error>>> + Send where Self: Sized; // Desugared async function
+        id: u32,
+        buffer: Vec<u8>,
+    ) -> impl std::future::Future<Output = Result<Box<Self>, Box<std::io::Error>>> + Send
+    where
+        Self: Sized; // Desugared async function
+}
+
+pub(crate) fn downcast_packet<P: Packet>(
+    packet: Arc<dyn Packet>,
+) -> Result<Arc<P>, Box<std::io::Error>> {
+    let anyed = packet as Arc<dyn Any + Send + Sync>;
+    anyed.downcast::<P>().map_err(|_| {
+        Box::new(Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "Failed to downcast packet to type: {}",
+                std::any::type_name::<P>()
+            ),
+        ))
+    })
+}
+
+// What an abomination this is, but it's nice
+pub(crate) fn upcast_packet<E, P: Packet>(
+    buffer: Result<Box<P>, E>,
+) -> Result<Box<dyn Packet + 'static>, E> {
+    buffer.map(|b| b as Box<dyn Packet + 'static>)
+}
+
+#[macro_export]
+macro_rules! dispatch_packet_event {
+    (
+        packet = $packet:expr,
+        server = $server:expr,
+        state = $state:expr,
+        connection = $connection:expr,
+        table = {
+            $(
+                $conn_state:pat => [ $( $ty:ty ),* $(,)? ]
+            ),* $(,)?
+        }
+    ) => {
+        use crate::event::player_events::PlayerSentPacket;
+        match $state {
+            $(
+                $conn_state => {
+                    $(
+                        if $packet.packet_id() == <$ty>::id() {
+                            if let Ok(concrete) = Arc::downcast::<$ty>($packet) {
+                                let event = Arc::new(PlayerSentPacket::<$ty> {
+                                    packet: concrete,
+                                    player_connection: $connection,
+                                });
+
+                                $server.lock().await.event_bus.dispatch(&event).await;
+
+                            }
+                        }
+                    )*
+                }
+            )*
+            _ => {
+                eprintln!("Unknown state or packet: {:?} in state {:?}", $packet.packet_id(), $state);
+            }
+        }
+    };
 }
