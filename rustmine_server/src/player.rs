@@ -4,11 +4,14 @@ use tokio::{net::TcpStream, sync::Mutex};
 
 use crate::{
     dispatch_packet_event, packet::{
-        self, serverbound::{self, handshake::HandshakePacket, status::{self, StatusRequestPacket}}, Packet, RawPacket
+        self, serverbound::{
+            self, configuration,
+            handshake::HandshakePacket,
+            login::{self, LoginAcknowledgedPacket, LoginStartPacket},
+            status::{self, StatusRequestPacket},
+        }, Packet, RawPacket
     }, RustmineServer, Shared
 };
-
-
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum State {
@@ -34,12 +37,41 @@ impl State {
     }
 }
 
+#[derive(Clone)]
+pub struct PlayerClientInfo {
+    pub brand: String,
+    pub locale: String,
+    pub view_distance: i8,
+    pub chat_mode: i32,
+    pub chat_colors: bool,
+    pub skin_parts: u8,
+    pub main_hand: u8,
+    pub text_filtering: bool,
+    pub server_listing: bool,
+}
+
+impl Default for PlayerClientInfo {
+    fn default() -> Self {
+        Self {
+            brand: "".to_string(),
+            locale: "".to_string(),
+            view_distance: 0,
+            chat_mode: 0,
+            chat_colors: false,
+            skin_parts: 0,
+            main_hand: 0,
+            text_filtering: false,
+            server_listing: false,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct PlayerConnection {
+    info: Shared<PlayerClientInfo>,
     server: Shared<RustmineServer>,
     stream: Shared<TcpStream>, // Any I/O should be handled by the player connection implementation
-    state:  Shared<State>,
+    state: Shared<State>,
     compression_threshold: u32,
 }
 
@@ -53,6 +85,7 @@ impl PlayerConnection {
     /// Creates a new [`PlayerConnection`].
     pub(crate) fn new(stream: TcpStream, server: &Shared<RustmineServer>) -> Self {
         Self {
+            info: Arc::new(Mutex::new(PlayerClientInfo::default())),
             stream: Arc::new(Mutex::new(stream)),
             server: Arc::clone(server),
             state: Arc::new(Mutex::new(State::Handshake)),
@@ -61,8 +94,12 @@ impl PlayerConnection {
     }
 
     pub async fn read_packet(&mut self) -> Result<Arc<dyn Packet>, Box<std::io::Error>> {
-        let (_, id, buffer) = self.read_packet_raw().await
-            .map_err(|_| Box::new(std::io::Error::new(ErrorKind::InvalidData, "Error occured whilst reading data")))?;
+        let (_, id, buffer) = self.read_packet_raw().await.map_err(|e| {
+            Box::new(std::io::Error::new(
+                ErrorKind::InvalidData,
+                format!("Error occured whilst reading data: {}", e),
+            ))
+        })?;
 
         let packet = match *self.state.lock().await {
             State::Handshake => match id {
@@ -73,11 +110,12 @@ impl PlayerConnection {
                 )))?,
             },
             State::Status => serverbound::status::read_packet(id, buffer).await,
-            State::Login => todo!(),
+            State::Login => serverbound::login::read_packet(id, buffer).await,
+            State::Configuration => serverbound::configuration::read_packet(id, buffer).await,
             State::Play => todo!(),
-            State::Configuration => todo!(),
             State::Transfer => todo!(),
-        }.map(|boxed| Arc::from(boxed) as Arc<dyn Packet>);
+        }
+        .map(|boxed| Arc::from(boxed) as Arc<dyn Packet>);
 
         if let Ok(ref p) = packet {
             if p.packet_id() != id {
@@ -100,6 +138,7 @@ impl PlayerConnection {
                 table = {
                     State::Handshake => [HandshakePacket],
                     State::Status => [StatusRequestPacket],
+                    State::Login => [LoginStartPacket, LoginAcknowledgedPacket],
                 }
             } // Maybe centralize this into a packet registry instead of defining a table?
         }
@@ -127,6 +166,10 @@ impl PlayerConnection {
             }
             State::Login => {
                 *self.state.lock().await = State::Login;
+                if login::handle_login(self).await.is_ok() {
+                    *self.state.lock().await = State::Configuration;
+                    configuration::handle_configuration(self).await?;
+                }
             }
             _ => {
                 return Err(Box::new(std::io::Error::new(
@@ -140,7 +183,41 @@ impl PlayerConnection {
     }
 
     pub async fn write_packet(&mut self, packet: &dyn Packet) -> Result<(), Box<std::io::Error>> {
-        packet::write_packet(packet, &mut *self.stream.lock().await, self.compression_threshold).await.map_err(|e| Box::new(e))
+        packet::write_packet(
+            packet,
+            &mut *self.stream.lock().await,
+            self.compression_threshold,
+        )
+        .await
+        .map_err(|e| Box::new(e))
     }
 
+    pub(crate) async fn update_client_info(
+        &mut self,
+        client_info_packet: Arc<configuration::ClientInformationConfigPacket>,
+        config_plugin_message: Arc<configuration::ConfigurationPluginMessagePacket>,
+    ) -> Result<(), Box<std::io::Error>> {
+        if config_plugin_message.channel != "minecraft:brand" {
+            return Err(Box::new(std::io::Error::new(
+                ErrorKind::InvalidData,
+                "Expected minecraft:brand channel",
+            )));
+        }
+
+        let brand = String::from_utf8(config_plugin_message.data.clone())
+            .map_err(|_| std::io::Error::new(ErrorKind::InvalidData, "Invalid brand data"))?;
+
+        let mut info = self.info.lock().await;
+        info.brand = brand;
+        info.locale = client_info_packet.locale.clone();
+        info.view_distance = client_info_packet.view_distance;
+        info.chat_mode = client_info_packet.chat_mode;
+        info.chat_colors = client_info_packet.chat_colors;
+        info.skin_parts = client_info_packet.skin_parts;
+        info.main_hand = client_info_packet.main_hand as u8;
+        info.text_filtering = client_info_packet.text_filtering;
+        info.server_listing = client_info_packet.server_listing;
+
+        Ok(())
+    }
 }

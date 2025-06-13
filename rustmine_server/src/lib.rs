@@ -6,8 +6,10 @@ pub mod config;
 pub mod event;
 pub mod packet;
 pub mod player;
+pub mod world;
 
 use std::sync::Arc;
+use rustmine_lib::dimension;
 use tokio::{net::TcpListener, sync::Mutex, task};
 
 use crate::{
@@ -17,24 +19,18 @@ use crate::{
 
 pub struct RustmineServer {
     pub config: ServerConfig,
-    pub event_bus: Arc<EventBus>,
+    pub event_bus: EventBus,
+    pub dimension_type_manager: dimension::DimensionTypeManager,
 }
 
 impl RustmineServer {
     pub fn new(config: ServerConfig) -> Shared<RustmineServer> {
         Arc::new(Mutex::new(RustmineServer {
             config,
-            event_bus: Arc::new(EventBus::default()),
+            event_bus: EventBus::default(),
+            dimension_type_manager: dimension::DimensionTypeManager::default(),
         }))
     }
-
-    /*pub async fn get_event_bus(server: &Shared<RustmineServer>) -> Result<Shared<EventBus>, std::io::Error> {
-        let server = server.lock().await;
-        let cloned_event_bus = server.event_bus.clone();
-        drop(server);
-
-        Ok(cloned_event_bus)
-    }*/
 
     pub async fn run(server: Shared<RustmineServer>) -> Result<(), Box<std::io::Error>> {
         let server_lock = server.lock().await;

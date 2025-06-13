@@ -1,41 +1,22 @@
-use std::io::{Error, ErrorKind};
+use rustmine_lib::component::Component;
+use serde::{Deserialize, Serialize};
 
-use crate::packet::{Packet, data};
+use crate::{
+    clientbound_packet,
+    packet::{Packet, data},
+    packet_id,
+};
 
 pub struct StatusResponsePacket {
-    pub response: StatusResponse
+    pub response: StatusResponse,
 }
 
 impl Packet for StatusResponsePacket {
-    fn id() -> u32 {
-        0x00
-    }
-
-    async fn read_from(
-        id: u32,
-        buffer: Vec<u8>,
-    ) -> Result<Box<StatusResponsePacket>, Box<std::io::Error>> {
-        if id != Self::id() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "id mismatch!",
-            )));
-        }
-        let mut position = 0 as usize;
-        let json_response = data::read_string(&buffer, &mut position).unwrap();
-
-        Ok(Box::new(StatusResponsePacket { 
-            response: serde_json::from_str(&json_response)
-                .map_err(|e| Box::new(Error::new(ErrorKind::InvalidData, e)))?
-        }))
-    }
+    packet_id!(0x00);
+    clientbound_packet!();
 
     fn write_to(&self, buffer: &mut Vec<u8>) {
-        data::write_string(buffer, &self.response.serde_serialize());
-    }
-
-    fn packet_id(&self) -> u32 {
-        Self::id()
+        data::write_string(buffer, &serde_json::to_string(&self.response).unwrap());
     }
 }
 
@@ -43,39 +24,18 @@ pub struct StatusPongPacket {
     pub payload: u64,
 }
 impl Packet for StatusPongPacket {
-    fn id() -> u32 {
-        0x01
-    }
-
-    async fn read_from(
-        id: u32,
-        buffer: Vec<u8>,
-    ) -> Result<Box<StatusPongPacket>, Box<std::io::Error>> {
-        if id != Self::id() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "id mismatch!",
-            )));
-        }
-        let mut position = 0 as usize;
-        let payload = data::read_long(&buffer, &mut position).unwrap();
-
-        Ok(Box::new(StatusPongPacket { payload }))
-    }
+    packet_id!(0x01);
+    clientbound_packet!();
 
     fn write_to(&self, buffer: &mut Vec<u8>) {
         data::write_long(buffer, self.payload);
-    }
-
-    fn packet_id(&self) -> u32 {
-        Self::id()
     }
 }
 
 impl Default for StatusVersion {
     fn default() -> Self {
         StatusVersion {
-            name: "Rustmine Server".to_string(),
+            name: "Rustmine 1.21.5".to_string(),
             protocol: crate::PROTOCOL_VERSION,
         }
     }
@@ -91,30 +51,33 @@ impl Default for StatusPlayers {
     }
 }
 
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct StatusResponse {
     pub version: StatusVersion,
     pub players: StatusPlayers,
-    pub description: ChatComponent,
+    pub description: Component,
+    // prefix the favicon with "data:image/png;base64," if it's a base64 encoded image
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub favicon: Option<String>,
+
+    #[serde(rename = "enforcesSecureChat")]
+    pub enforces_secure_chat: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct StatusVersion {
     pub name: String,
     pub protocol: i32,
 }
 
-
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct StatusPlayers {
     pub max: i32,
     pub online: i32,
     pub sample: Vec<StatusPlayerEntry>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct StatusPlayerEntry {
     pub name: String,
     pub id: String,

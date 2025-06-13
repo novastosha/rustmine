@@ -1,39 +1,25 @@
 use std::io::Error;
 
-use flate2::Status;
-use serde::Serialize;
-
-use crate::packet::{self, Packet, clientbound::status::StatusPongPacket};
+use crate::{
+    id_match,
+    packet::{self, clientbound::status::StatusPongPacket, data, Packet},
+    packet_id,
+};
 
 pub struct StatusRequestPacket {}
 
 impl Packet for StatusRequestPacket {
-    fn id() -> u32 {
-        0x00
-    }
+    packet_id!(0x00);
 
     async fn read_from(
         id: u32,
         _buffer: Vec<u8>,
     ) -> Result<Box<StatusRequestPacket>, Box<std::io::Error>> {
-        if id != Self::id() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "id mismatch!",
-            )));
-        }
-
-        // For StatusRequestPacket, no additional data is needed.
+        id_match!(id, Self::id());
         Ok(Box::new(StatusRequestPacket {}))
     }
 
-    fn write_to(&self, _buffer: &mut Vec<u8>) {
-        // No data to write for StatusRequestPacket
-    }
-
-    fn packet_id(&self) -> u32 {
-        Self::id()
-    }
+    fn write_to(&self, _buffer: &mut Vec<u8>) {}
 }
 
 pub struct StatusPingPacket {
@@ -41,33 +27,20 @@ pub struct StatusPingPacket {
 }
 
 impl Packet for StatusPingPacket {
-    fn id() -> u32 {
-        0x01
-    }
+    packet_id!(0x01);
 
     async fn read_from(
         id: u32,
         buffer: Vec<u8>,
     ) -> Result<Box<StatusPingPacket>, Box<std::io::Error>> {
-        if id != Self::id() {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "id mismatch!",
-            )));
-        }
+        id_match!(id, Self::id());
 
-        let mut position = 0 as usize;
-        let payload = crate::packet::data::read_long(&buffer, &mut position).unwrap();
-
+        let payload = data::read_long(&buffer, &mut 0).unwrap();
         Ok(Box::new(StatusPingPacket { payload }))
     }
 
     fn write_to(&self, buffer: &mut Vec<u8>) {
-        crate::packet::data::write_long(buffer, self.payload);
-    }
-
-    fn packet_id(&self) -> u32 {
-        Self::id()
+        data::write_long(buffer, self.payload);
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod player_events;
+pub mod server_events;
 
 use std::{any::{Any, TypeId}, collections::HashMap, pin::Pin, sync::Arc};
 

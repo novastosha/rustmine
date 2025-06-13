@@ -1,13 +1,13 @@
 [package]
-name = "rustmine_server"
+name = "rustmine_lib"
 version = "0.0.1"
 edition = "2024"
 
 [dependencies]
-rustmine_lib = { path = "../rustmine_lib" }
 tokio = { version = "1.45.1", features = ["full"] }
 serde_json = { version =  "1.0.140"}
 serde = { version = "1.0.219", features = ["derive"]}
 toml = "0.8.20"
 uuid = {version = "1.16.0", features = ["v4"]}
 flate2 = "1.0"
+fastnbt = "2"

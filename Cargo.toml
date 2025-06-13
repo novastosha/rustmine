@@ -1,5 +1,5 @@
 [workspace]
 resolver = "2"
 members = [
-    "rustmine_server"
+    "rustmine_server","rustmine_lib","example_server"
 ]
