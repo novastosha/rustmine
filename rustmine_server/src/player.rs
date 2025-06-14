@@ -1,5 +1,6 @@
 use std::{error::Error, io::ErrorKind, sync::Arc};
 
+use rustmine_lib::game_profile::GameProfile;
 use tokio::{net::TcpStream, sync::Mutex};
 
 use crate::{
@@ -68,8 +69,10 @@ impl Default for PlayerClientInfo {
 
 #[derive(Clone)]
 pub struct PlayerConnection {
+    pub server: Shared<RustmineServer>,
+    pub game_profile: Shared<Option<GameProfile>>,
+
     info: Shared<PlayerClientInfo>,
-    server: Shared<RustmineServer>,
     stream: Shared<TcpStream>, // Any I/O should be handled by the player connection implementation
     state: Shared<State>,
     compression_threshold: u32,
@@ -78,7 +81,7 @@ pub struct PlayerConnection {
 #[allow(dead_code)]
 pub struct Player {
     pub server: Shared<RustmineServer>,
-    connection: Shared<PlayerConnection>,
+    pub connection: Shared<PlayerConnection>,
 }
 
 impl PlayerConnection {
@@ -89,6 +92,7 @@ impl PlayerConnection {
             stream: Arc::new(Mutex::new(stream)),
             server: Arc::clone(server),
             state: Arc::new(Mutex::new(State::Handshake)),
+            game_profile: Arc::new(Mutex::new(None)),
             compression_threshold: 0,
         }
     }
@@ -168,7 +172,11 @@ impl PlayerConnection {
                 *self.state.lock().await = State::Login;
                 if login::handle_login(self).await.is_ok() {
                     *self.state.lock().await = State::Configuration;
-                    configuration::handle_configuration(self).await?;
+                    if configuration::handle_configuration(self).await.is_ok() {
+                        *self.state.lock().await = State::Play;
+
+                        
+                    }
                 }
             }
             _ => {
@@ -219,5 +227,10 @@ impl PlayerConnection {
         info.server_listing = client_info_packet.server_listing;
 
         Ok(())
+    }
+    
+    pub(crate) async fn set_game_profile(&mut self, profile: GameProfile) {
+        let mut profile_player = self.game_profile.lock().await;
+        *profile_player = Some(profile);
     }
 }

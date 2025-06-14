@@ -184,3 +184,7 @@ pub fn read_bytes(
     *position += data_length;
     Ok(slice)
 }
+
+pub fn write_bytes(buffer: &mut Vec<u8>, data: &[u8]) {
+    buffer.extend_from_slice(&data.to_vec())
+}

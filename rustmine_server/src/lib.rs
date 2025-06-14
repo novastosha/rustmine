@@ -13,13 +13,14 @@ use rustmine_lib::dimension;
 use tokio::{net::TcpListener, sync::Mutex, task};
 
 use crate::{
-    config::ServerConfig, event::EventBus, packet::serverbound::handshake::HandshakePacket,
+    config::ServerConfig, event::{server_events::ServerConfigurationStartEvent, EventBus}, packet::serverbound::handshake::HandshakePacket,
     player::PlayerConnection,
 };
 
 pub struct RustmineServer {
+    pub brand_name: String,
     pub config: ServerConfig,
-    pub event_bus: EventBus,
+    pub event_bus: Arc<EventBus>,
     pub dimension_type_manager: dimension::DimensionTypeManager,
 }
 
@@ -27,8 +28,9 @@ impl RustmineServer {
     pub fn new(config: ServerConfig) -> Shared<RustmineServer> {
         Arc::new(Mutex::new(RustmineServer {
             config,
-            event_bus: EventBus::default(),
+            event_bus: Arc::new(EventBus::default()),
             dimension_type_manager: dimension::DimensionTypeManager::default(),
+            brand_name: "Rustmine".to_owned(),
         }))
     }
 
@@ -43,7 +45,13 @@ impl RustmineServer {
 
         println!("Server listening on port: {:?}", server_lock.config.port);
 
+        let event_bus = server_lock.event_bus.clone();
         drop(server_lock);
+
+        event_bus.dispatch(&Arc::new(ServerConfigurationStartEvent {
+            server: server.clone()
+        })).await;
+
         loop {
             match listener.accept().await {
                 Ok((stream, addr)) => {

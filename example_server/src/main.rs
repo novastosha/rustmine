@@ -43,8 +43,9 @@ async fn main() -> Result<(), std::io::Error> {
 
         event_bus
             .listen::<ServerConfigurationStartEvent, _, _, _>(true, |event| async move {
-                let server = event.server.lock().await;
+                let mut server = event.server.lock().await;
 
+                server.brand_name = "Cool Brandname".to_string();
                 register_default_dimension_types!(&server.dimension_type_manager);
                 None
             })

@@ -1,10 +1,11 @@
 use std::io::Error;
 
+use rustmine_lib::game_profile::GameProfile;
 use uuid::Uuid;
 
 use crate::{
     id_match,
-    packet::{self, clientbound::login::LoginSuccessPacket, data, Packet},
+    packet::{self, Packet, clientbound::login::LoginSuccessPacket, data},
     packet_id, serverbound_packet,
 };
 
@@ -72,8 +73,14 @@ pub(crate) async fn handle_login(
     arg.write_packet(&LoginSuccessPacket {
         username: login_start_packet.username.clone(),
         uuid: login_start_packet.uuid,
+        // TODO READ TEXTURES AND SIGNATURE
     })
     .await?;
+
+    arg.set_game_profile(GameProfile {
+        username: login_start_packet.username.clone(),
+        uuid: login_start_packet.uuid
+    }).await;
 
     let packet = arg.read_packet().await?;
     if packet.packet_id() != LoginAcknowledgedPacket::id() {
