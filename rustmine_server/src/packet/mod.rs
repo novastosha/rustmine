@@ -215,14 +215,13 @@ macro_rules! dispatch_packet_event {
             ),* $(,)?
         }
     ) => {
-        use crate::event::player_events::PlayerSentPacket;
         match $state {
             $(
                 $conn_state => {
                     $(
                         if $packet.packet_id() == <$ty>::id() {
                             if let Ok(concrete) = Arc::downcast::<$ty>($packet) {
-                                let event = Arc::new(PlayerSentPacket::<$ty> {
+                                let event = Arc::new(crate::event::player_events::PlayerSentPacket::<$ty> {
                                     packet: concrete,
                                     player_connection: $connection,
                                 });

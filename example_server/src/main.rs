@@ -1,15 +1,21 @@
-use std::io;
+use std::{io, rc::Rc, sync::Arc};
 
 use once_cell::sync::Lazy;
-use rustmine_lib::{register_default_dimension_types, styled, text};
+use rustmine_lib::{
+    blocks::Block, dimension::DimensionType, register_default_dimension_types, styled, text,
+};
 use rustmine_server::{
     RustmineServer,
     config::ServerConfig,
-    event::{player_events::PlayerSentPacket, server_events::ServerConfigurationStartEvent},
+    event::{
+        player_events::{PlayerJoinedServer, PlayerSentPacket},
+        server_events::ServerConfigurationStartEvent,
+    },
     packet::{
         clientbound::status::{StatusPlayers, StatusResponse, StatusResponsePacket, StatusVersion},
         serverbound::status::StatusRequestPacket,
     },
+    world::World,
 };
 
 static MOTD: Lazy<StatusResponse> = Lazy::new(|| StatusResponse {
@@ -41,15 +47,32 @@ async fn main() -> Result<(), std::io::Error> {
     {
         let event_bus = &server.lock().await.event_bus;
 
+        let mut spawning_world: Rc<Option<Arc<World>>> = Rc::new(None);
+
         event_bus
             .listen::<ServerConfigurationStartEvent, _, _, _>(true, |event| async move {
                 let mut server = event.server.lock().await;
-
-                server.brand_name = "Cool Brandname".to_string();
                 register_default_dimension_types!(&server.dimension_type_manager);
+
+                let dimension = &server
+                    .dimension_type_manager
+                    .get("minecraft:the_end")
+                    .unwrap();
+
+                let world = server.world_manager.create_world(dimension, SinewaveGenerator);
+
+                spawning_world = Rc::new(Some(world));
+                server.brand_name = "Cool Brandname".to_string();
                 None
             })
             .await;
+
+        event_bus.listen::<PlayerJoinedServer, _, _, _>(false, |event| async move {
+            let spawning_world = spawning_world.unwrap();
+            let player = event.player.lock().await;
+
+            player.set_world(spawning_world);
+        });
 
         event_bus
             .listen::<PlayerSentPacket<StatusRequestPacket>, _, _, _>(false, |event| async move {

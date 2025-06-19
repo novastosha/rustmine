@@ -1,4 +1,4 @@
-pub const PROTOCOL_VERSION: i32 = 770;
+pub const PROTOCOL_VERSION: i32 = 771;
 
 pub type Shared<T> = Arc<Mutex<T>>; // Move this elsewhere maybe?
 
@@ -22,6 +22,7 @@ pub struct RustmineServer {
     pub config: ServerConfig,
     pub event_bus: Arc<EventBus>,
     pub dimension_type_manager: dimension::DimensionTypeManager,
+    pub world_manager: world::WorldManager,
 }
 
 impl RustmineServer {
@@ -30,6 +31,7 @@ impl RustmineServer {
             config,
             event_bus: Arc::new(EventBus::default()),
             dimension_type_manager: dimension::DimensionTypeManager::default(),
+            world_manager: world::WorldManager::default(),
             brand_name: "Rustmine".to_owned(),
         }))
     }

@@ -8,6 +8,6 @@ pub struct ConfigKnownPackEntry {
 
 impl ConfigKnownPackEntry {
     pub fn minecraft_core() -> ConfigKnownPackEntry {
-        ConfigKnownPackEntry { name: "minecraft:core".to_string(), version: "1.21.5".to_string() }
+        ConfigKnownPackEntry { name: "minecraft:core".to_string(), version: "1.21.6".to_string() }
     }
 }

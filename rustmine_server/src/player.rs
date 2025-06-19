@@ -6,7 +6,7 @@ use tokio::{net::TcpStream, sync::Mutex};
 use crate::{
     dispatch_packet_event, packet::{
         self, serverbound::{
-            self, configuration,
+            self, configuration::{self, ClientInformationConfigPacket, ClientKnownPacksPacket, ConfigurationPluginMessagePacket},
             handshake::HandshakePacket,
             login::{self, LoginAcknowledgedPacket, LoginStartPacket},
             status::{self, StatusRequestPacket},
@@ -143,8 +143,11 @@ impl PlayerConnection {
                     State::Handshake => [HandshakePacket],
                     State::Status => [StatusRequestPacket],
                     State::Login => [LoginStartPacket, LoginAcknowledgedPacket],
+                    State::Configuration => [ClientInformationConfigPacket, ClientKnownPacksPacket, ConfigurationPluginMessagePacket]
                 }
-            } // Maybe centralize this into a packet registry instead of defining a table?
+            }; // Maybe centralize this into a packet registry instead of defining a table?
+
+            
         }
 
         return packet.map_err(|op| {

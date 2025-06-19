@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use crate::{packet::{serverbound::status::StatusRequestPacket, Packet}, player::{Player, PlayerConnection}, Shared};
+use crate::{packet::Packet, player::{Player, PlayerConnection}, Shared};
 
 pub struct PlayerJoinedServer {
     pub player: Shared<Player>,

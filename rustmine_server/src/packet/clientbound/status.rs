@@ -35,7 +35,7 @@ impl Packet for StatusPongPacket {
 impl Default for StatusVersion {
     fn default() -> Self {
         StatusVersion {
-            name: "Rustmine 1.21.5".to_string(),
+            name: "Rustmine".to_string(),
             protocol: crate::PROTOCOL_VERSION,
         }
     }

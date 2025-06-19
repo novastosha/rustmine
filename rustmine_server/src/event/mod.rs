@@ -5,7 +5,7 @@ use std::{any::{Any, TypeId}, collections::HashMap, pin::Pin, sync::Arc};
 
 use tokio::sync::RwLock;
 
-pub trait Event<R: Clone + Send + Sync + 'static>: Send + Sync + 'static {}
+pub trait Event<R: Send + Sync + 'static>: Send + Sync + 'static {}
 
 //
 // One thing to ensure during event thingys, is that the Shared<T> values are not locked prior to the dispatch
@@ -40,7 +40,7 @@ impl EventBus {
     pub async fn listen<E,R, F, Fut>(&self, lazy: bool, callback: F)
     where
     E: Event<R>,
-    R: Clone + Send + Sync + 'static,
+    R:  Send + Sync + 'static,
         F: Fn(Arc<E>) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Option<R>> + Send + 'static,
     {
@@ -69,7 +69,7 @@ impl EventBus {
             ));
     }
 
-    pub async fn dispatch<E: Event<R>,R: Clone + Send + Sync + 'static,>(&self, event: &Arc<E>) -> Option<R> {
+    pub async fn dispatch<E: Event<R>,R: Send + Sync + 'static,>(&self, event: &Arc<E>) -> Option<R> {
         let listeners = self.listeners.read().await;
         let event: Arc<RwLock<Box<dyn Any + Send + Sync>>> = Arc::new(RwLock::new(Box::new(event.clone())));
     
