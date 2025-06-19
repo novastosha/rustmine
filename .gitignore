@@ -2,8 +2,8 @@
 Cargo.lock
 
 # Code generator leftovers
-codegen/generator/
-codegen/libraries
-codegen/logs
-codegen/versions
-codegen/minecraft_server.*.jar
+codegen/generator/generated
+codegen/generator/libraries
+codegen/generator/logs
+codegen/generator/versions
+codegen/generator/minecraft_server.*.jar
